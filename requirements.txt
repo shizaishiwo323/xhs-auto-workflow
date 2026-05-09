@@ -1,0 +1,7 @@
+DrissionPage>=4.0
+numpy
+openpyxl
+pandas
+Pillow
+tqdm
+

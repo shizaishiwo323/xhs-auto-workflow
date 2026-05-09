@@ -1,0 +1,20 @@
+{
+  "crawl": {
+    "notebook": "notebooks/scraper/xhs_scraper_formal.ipynb",
+    "output_root": "outputs/crawl"
+  },
+  "material_generation": {
+    "output_root": "outputs/materials",
+    "package_contract": "每个选题目录内应包含 00_自动发推适配/publish_manifest.json"
+  },
+  "publish": {
+    "script": "scripts/publish_from_manifest.py",
+    "default_port": 9209,
+    "limits": {
+      "title_chars": 20,
+      "body_chars": 1000,
+      "images": 18
+    }
+  }
+}
+

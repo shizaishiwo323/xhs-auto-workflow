@@ -1,0 +1,2 @@
+"""Xiaohongshu automation workflow package."""
+
