@@ -21,7 +21,6 @@ from dataclasses import dataclass
 import json
 import re
 import hashlib
-import shutil
 import time as _time
 from pathlib import Path
 from urllib.parse import urlparse, unquote
@@ -376,9 +375,9 @@ def _scene_priority(scene: str, quality: QualityMode) -> int:
     s = (scene or "").upper()
     if quality == "highest":
         rank = {
-            "WB_DFT": 6,
-            "URL_DEFAULT": 5,
-            "WB_ORI": 4,
+            "WB_ORI": 6,
+            "WB_DFT": 5,
+            "URL_DEFAULT": 4,
             "WB_PRV": 3,
             "URL_PRE": 2,
             "URL": 1,
@@ -437,10 +436,10 @@ def _image_sort_key(item: Dict[str, Any], quality: QualityMode) -> Tuple[int, in
 
     if quality == "lowest":
         pixel_key = pixels if isinstance(pixels, int) else 10**18
-        return pixel_key, scene_score, nd_score, len(item["url"]), item["url"]
+        return pixel_key, nd_score, scene_score, len(item["url"]), item["url"]
 
     pixel_key = pixels if isinstance(pixels, int) else -1
-    return pixel_key, scene_score, nd_score, len(item["url"]), item["url"]
+    return pixel_key, nd_score, scene_score, len(item["url"]), item["url"]
 
 
 def collect_image_nodes(obj: Any, out: List[Dict[str, Any]]) -> None:
@@ -784,7 +783,7 @@ def extract_image_urls(
     quality: QualityMode = "highest",
     resolution_mode: ResolutionMode = "best",
 ) -> ExtractSummary:
-    """从原始文本中提取最终可下载图片 URL（默认保留全分辨率候选，后续按下载文件大小筛选）"""
+    """从原始文本中提取最终可下载图片 URL。"""
     q = normalize_quality(quality)
     mode = normalize_resolution_mode(resolution_mode)
     all_urls: Set[str] = set()
@@ -793,11 +792,10 @@ def extract_image_urls(
     selected_images: List[Dict[str, Any]] = []
     if obj is not None:
         collect_urls_from_obj(obj, all_urls)
-        all_variants = extract_all_image_variants(obj)
-        if all_variants:
-            selected_images = all_variants
-        elif mode == "best" and q != "none":
-            selected_images = extract_images_by_quality(obj, quality=q if q in {"highest", "lowest"} else "highest")
+        if mode == "all" or q == "none":
+            selected_images = extract_all_image_variants(obj)
+        elif mode == "best":
+            selected_images = extract_images_by_quality(obj, quality=q)
 
     all_urls.update(collect_urls_from_text(raw_text))
 
@@ -940,10 +938,6 @@ def download_image_urls(
     # 统一分拣到两个目录：高分辨率 / 低分辨率
     high_dir = output_path / "high_resolution"
     low_dir = output_path / "low_resolution"
-    if high_dir.exists():
-        shutil.rmtree(high_dir, ignore_errors=True)
-    if low_dir.exists():
-        shutil.rmtree(low_dir, ignore_errors=True)
     high_dir.mkdir(parents=True, exist_ok=True)
     low_dir.mkdir(parents=True, exist_ok=True)
 
@@ -981,12 +975,21 @@ def download_image_urls(
 
         valid_items.sort(key=lambda x: (int(x["size"]), len(str(x.get("url", ""))), str(x.get("url", ""))))
         high_item = valid_items[-1]
+        low_item = valid_items[0]
 
-        # 最大文件进 high_resolution
+        if q == "highest":
+            if move_into(high_dir, high_item):
+                high_count += 1
+            continue
+
+        if q == "lowest":
+            if move_into(low_dir, low_item):
+                low_count += 1
+            continue
+
+        # quality=none：最大文件进 high_resolution，其余进 low_resolution 供对比。
         if move_into(high_dir, high_item):
             high_count += 1
-
-        # 其余进 low_resolution；若只有一个文件，则 low 不放
         for x in valid_items[:-1]:
             if move_into(low_dir, x):
                 low_count += 1
@@ -995,33 +998,24 @@ def download_image_urls(
     kept_after_filter = high_count + low_count
 
     if q == "highest":
-        # 删除低分辨率目录
-        if low_dir.exists():
-            removed_by_quality = sum(1 for p in low_dir.rglob("*") if p.is_file())
-            shutil.rmtree(low_dir, ignore_errors=True)
+        removed_by_quality = max(downloaded_success - high_count, 0)
         kept_after_filter = high_count
         low_count = 0
-        print(f"后置筛选：quality=highest，已删除 low_resolution，保留 high_resolution {high_count} 张")
+        print(f"后置筛选：quality=highest，最终保留 high_resolution {high_count} 张")
     elif q == "lowest":
-        # 删除高分辨率目录
-        if high_dir.exists():
-            removed_by_quality = sum(1 for p in high_dir.rglob("*") if p.is_file())
-            shutil.rmtree(high_dir, ignore_errors=True)
+        removed_by_quality = max(downloaded_success - low_count, 0)
         kept_after_filter = low_count
         high_count = 0
-        print(f"后置筛选：quality=lowest，已删除 high_resolution，保留 low_resolution {low_count} 张")
+        print(f"后置筛选：quality=lowest，最终保留 low_resolution {low_count} 张")
     elif q == "none":
         print("后置筛选：quality=none，保留 high_resolution + low_resolution 两个目录。")
 
-    # 清理临时下载目录
+    # 只尝试移除已经搬空的临时目录；若里面还剩文件，保留现场供人工确认。
     if staging_dir.exists():
-        for p in staging_dir.rglob("*"):
-            if p.is_file():
-                try:
-                    p.unlink()
-                except Exception:
-                    pass
-        shutil.rmtree(staging_dir, ignore_errors=True)
+        try:
+            staging_dir.rmdir()
+        except OSError:
+            pass
 
     print(f"目录输出：{output_path}")
     print(f"高分辨率目录：{high_dir}（文件数 {high_count}）")
@@ -1078,7 +1072,7 @@ def download_from_text(
     print(
         f"\n完成：保留 {download_summary.success}/{download_summary.total}，"
         f"下载成功 {download_summary.downloaded_success}/{download_summary.total}，"
-        f"后置删除 {download_summary.removed_by_quality}，"
+        f"未保留候选 {download_summary.removed_by_quality}，"
         f"图片组 {download_summary.group_count}，"
         f"高分目录 {download_summary.high_count}，"
         f"低分目录 {download_summary.low_count}"

@@ -359,7 +359,7 @@ def _stream_sort_key(item: Dict[str, Any], quality: QualityMode) -> Tuple[int, i
     return size_key, pixel_key, item["url"]
 
 
-def extract_streams_by_quality(obj: Any, quality: QualityMode = "lowest") -> List[Dict[str, Any]]:
+def extract_streams_by_quality(obj: Any, quality: QualityMode = "highest") -> List[Dict[str, Any]]:
     """从结构化 JSON 中按每个视频选择最高/最低流"""
     media_nodes: List[Dict[str, Any]] = []
     collect_media_nodes(obj, media_nodes)
@@ -550,7 +550,7 @@ def download_one(
 
 def extract_video_urls(
     raw_text: str,
-    quality: QualityMode = "lowest",
+    quality: QualityMode = "highest",
 ) -> ExtractSummary:
     """从原始文本中提取最终可下载视频 URL（按 quality 选择）"""
     q = normalize_quality(quality)
@@ -657,7 +657,7 @@ def download_video_urls(
 def download_from_text(
     raw_text: str,
     output_dir: Union[str, Path] = DEFAULT_OUTPUT_DIR_NAME,
-    quality: QualityMode = "lowest",
+    quality: QualityMode = "highest",
     cookie: str = "",
 ) -> Dict[str, Any]:
     """从页面状态文本直接提取并下载视频"""
@@ -689,7 +689,7 @@ def download_from_text(
 def download_from_notebook_output(
     notebook_path: Union[str, Path],
     output_dir: Union[str, Path] = DEFAULT_OUTPUT_DIR_NAME,
-    quality: QualityMode = "lowest",
+    quality: QualityMode = "highest",
     cookie: str = "",
 ) -> Dict[str, Any]:
     """从 .ipynb 的 code cell 输出中提取并下载视频"""
@@ -730,7 +730,7 @@ def download_from_page(
     bro: Any,
     url: str,
     output_dir: Union[str, Path] = DEFAULT_OUTPUT_DIR_NAME,
-    quality: QualityMode = "lowest",
+    quality: QualityMode = "highest",
     start_listen: bool = True,
     script_index: int = -6,
     cookie: str = "",
@@ -763,7 +763,7 @@ def download_from_page(
 def main(
     input_path: Union[str, Path] = DEFAULT_INPUT_PATH,
     output_dir: Optional[Union[str, Path]] = None,
-    quality: QualityMode = "lowest",
+    quality: QualityMode = "highest",
     cookie: str = "",
 ) -> None:
     """
@@ -800,7 +800,7 @@ if __name__ == "__main__":
         main(
             input_path=DEFAULT_INPUT_PATH,
             output_dir=None,
-            quality="lowest",
+            quality="highest",
             cookie="",
         )
     except KeyboardInterrupt:

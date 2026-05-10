@@ -26,6 +26,12 @@
 - `config/pipeline.example.json`：无敏感信息的配置示例。
 - `docs/`：项目规范、示例和架构说明。
 
+## 通知方式
+
+- 自动化通知不再使用项目内 SMTP/QQ 邮箱逻辑。
+- `xhs_notify.send_email(...)` 会生成 `outputs/gmail_notifications/*_gmail_notification.json` 待发送通知。
+- Codex 自动化线程读取待发送通知后，使用 Gmail 插件发送；收件人优先配置 `GMAIL_RECEIVERS`，也兼容旧的 `SMTP_RECEIVERS` 作为收件人回退。
+
 以下目录属于本地运行资产，已被 `.gitignore` 排除：
 
 - `notebooks/`：交互式采集、发布、调试 Notebook，可能包含运行输出或登录上下文。

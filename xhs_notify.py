@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Backward-compatible import entry for the notification helper."""
+"""Backward-compatible import entry for the Gmail plugin notification helper."""
 
 from __future__ import annotations
 
@@ -21,4 +21,3 @@ notify_failure = _MODULE.notify_failure
 notify_failure_once = _MODULE.notify_failure_once
 get_email_config = _MODULE.get_email_config
 EmailConfig = _MODULE.EmailConfig
-

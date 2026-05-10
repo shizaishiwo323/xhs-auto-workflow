@@ -1,6 +1,7 @@
 {
   "crawl": {
     "notebook": "notebooks/scraper/xhs_scraper_formal.ipynb",
+    "script": "scripts/run_scraper.py",
     "output_root": "outputs/crawl"
   },
   "material_generation": {
@@ -9,6 +10,7 @@
   },
   "publish": {
     "script": "scripts/publish_from_manifest.py",
+    "batch_script": "scripts/publish_batch.py",
     "default_port": 9209,
     "limits": {
       "title_chars": 20,
@@ -17,4 +19,3 @@
     }
   }
 }
-

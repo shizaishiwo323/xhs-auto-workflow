@@ -1,33 +1,29 @@
 # -*- coding: utf-8 -*-
-"""小红书自动化流程的邮件通知工具。"""
+"""小红书自动化流程的 Gmail 插件通知工具。
+
+项目内 Python 代码不能直接调用 Codex 的 Gmail 插件；这里负责把通知
+标准化并写入待发送队列。自动化线程读取队列后调用 Gmail 插件发送。
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from email import encoders
-from email.mime.base import MIMEBase
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
 
+import json
 import os
 import platform
-import smtplib
-import ssl
 import traceback
 
 
-SMTP_HOST = "smtp.qq.com"
-SMTP_PORT = 465
 _SENT_KEYS: set[str] = set()
+DEFAULT_OUTBOX_DIR = Path("outputs") / "gmail_notifications"
 
 
 @dataclass(frozen=True)
 class EmailConfig:
-    sender: str
-    auth_code: str
     receivers: tuple[str, ...]
 
 
@@ -76,26 +72,52 @@ def _load_setting(name: str, default: str = "") -> str:
 
 
 def get_email_config(receivers: Optional[Sequence[str]] = None) -> EmailConfig:
-    sender = _load_setting("SMTP_EMAIL")
-    auth_code = _load_setting("SMTP_AUTH_CODE")
-    configured_receivers = receivers or [
+    """读取 Gmail 插件收件人配置。
+
+    优先使用调用方传入的 `jieshou`/`receivers`，其次读取 `GMAIL_RECEIVERS`。
+    为了兼容旧环境，`SMTP_RECEIVERS` 只作为收件人列表的回退值，不再读取
+    或使用 SMTP 发信账号、授权码。
+    """
+    receiver_text = (
+        _load_setting("GMAIL_RECEIVERS")
+        or _load_setting("GMAIL_TO")
+        or _load_setting("XHS_GMAIL_RECEIVERS")
+        or _load_setting("SMTP_RECEIVERS")
+        or _load_setting("NOTIFY_EMAIL")
+    )
+    configured_receivers = list(receivers or []) or [
         item.strip()
-        for item in _load_setting("SMTP_RECEIVERS", sender).split(",")
+        for item in receiver_text.split(",")
         if item.strip()
     ]
 
-    if not sender:
-        raise ValueError("未配置 SMTP_EMAIL")
-    if not auth_code:
-        raise ValueError("未配置 SMTP_AUTH_CODE")
     if not configured_receivers:
-        raise ValueError("未配置 SMTP_RECEIVERS")
+        raise ValueError("未配置 Gmail 通知收件人，请设置 GMAIL_RECEIVERS")
 
-    return EmailConfig(
-        sender=sender,
-        auth_code=auth_code,
-        receivers=tuple(configured_receivers),
-    )
+    return EmailConfig(receivers=tuple(configured_receivers))
+
+
+def _notification_outbox_dir() -> Path:
+    configured = _load_setting("GMAIL_OUTBOX_DIR") or _load_setting("XHS_GMAIL_OUTBOX_DIR")
+    return Path(configured).expanduser() if configured else DEFAULT_OUTBOX_DIR
+
+
+def _normalize_attachments(attachments: Optional[Iterable[str | Path]]) -> list[str]:
+    paths: list[str] = []
+    for attachment in attachments or []:
+        path = Path(attachment).expanduser()
+        if path.exists() and path.is_file():
+            paths.append(str(path.resolve()))
+    return paths
+
+
+def _write_gmail_outbox(payload: dict[str, object]) -> Path:
+    outbox_dir = _notification_outbox_dir()
+    outbox_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    outbox_path = outbox_dir / f"{timestamp}_gmail_notification.json"
+    outbox_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return outbox_path
 
 
 def send_email(
@@ -104,33 +126,27 @@ def send_email(
     jieshou: Optional[Sequence[str]] = None,
     attachments: Optional[Iterable[str | Path]] = None,
 ) -> bool:
-    """发送邮件；失败时只打印错误，不中断主流程。"""
+    """生成一条由 Codex Gmail 插件发送的通知请求。
+
+    真实发送动作由自动化线程调用 Gmail 插件完成；本函数不再使用 SMTP。
+    """
     try:
         config = get_email_config(receivers=jieshou)
-        msg = MIMEMultipart()
-        msg["Subject"] = subject
-        msg["From"] = config.sender
-        msg["To"] = ", ".join(config.receivers)
-        msg.attach(MIMEText(body or subject, "plain", "utf-8"))
-
-        for attachment in attachments or []:
-            attachment_path = Path(attachment)
-            if not attachment_path.exists() or not attachment_path.is_file():
-                continue
-            with attachment_path.open("rb") as file:
-                part = MIMEBase("application", "octet-stream")
-                part.set_payload(file.read())
-            encoders.encode_base64(part)
-            part.add_header("Content-Disposition", f'attachment; filename="{attachment_path.name}"')
-            msg.attach(part)
-
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ssl.create_default_context()) as smtp:
-            smtp.login(config.sender, config.auth_code)
-            smtp.send_message(msg)
-        print(f"邮件成功发送至 {msg['To']}，主题为：{msg['Subject']}")
+        payload = {
+            "transport": "codex_gmail_plugin",
+            "plugin_tool": "mcp__codex_apps__gmail._send_email",
+            "to": ", ".join(config.receivers),
+            "subject": subject,
+            "body": body or subject,
+            "attachment_files": ", ".join(_normalize_attachments(attachments)),
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "pending_gmail_plugin_send",
+        }
+        outbox_path = _write_gmail_outbox(payload)
+        print(f"Gmail 插件待发送通知已写入：{outbox_path.resolve()}")
         return True
     except Exception as exc:
-        print(f"邮件发送失败: {exc}")
+        print(f"Gmail 插件通知生成失败: {exc}")
         return False
 
 
