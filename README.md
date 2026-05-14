@@ -3,16 +3,19 @@
 这个公开仓库只保留小红书自动化工作流的核心代码、示例配置和项目说明。
 本地敏感配置、登录态、抓取数据、生成素材、发布历史、媒体文件和 Notebook 运行产物不会随仓库发布。
 
-项目按三段流水线整理：
+项目按四段流水线整理：
 
 1. 爬取数据：采集关键词链接、笔记详情、图片/视频媒体。
-2. 生成素材：生成小红书标题、正文、封面、轮播图和发布适配清单。
-3. 自动发布：读取 `publish_manifest.json`，校验平台限制后填充小红书创作者后台。
+2. 账号复盘：采集自己账号笔记表现，并反哺下一轮素材生成策略。
+3. 生成素材：生成小红书标题、正文、封面、轮播图和发布适配清单。
+4. 自动发布：读取 `publish_manifest.json`，校验平台限制后填充小红书创作者后台。
 
 ## 当前入口
 
 - 图片下载模块：`src/xhs_workflow/scraper/image_downloader.py`
 - 视频下载模块：`src/xhs_workflow/scraper/video_downloader.py`
+- 账号数据抓取：`python scripts/fetch_account_metrics.py --port 9209`
+- 账号表现复盘：`python scripts/analyze_account_performance.py --account-metrics <小红书笔记数据分析.xlsx>`
 - 素材处理模块：`src/xhs_workflow/materials/`
 - 素材包校验：`python scripts/run_pipeline.py validate`
 - Manifest 发布校验：`python scripts/publish_from_manifest.py outputs/materials/2026-05-09/数据获取爬虫_公开数据流程/00_自动发推适配/publish_manifest.json`

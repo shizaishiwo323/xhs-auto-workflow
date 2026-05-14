@@ -29,13 +29,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run XHS workflow stages.")
     parser.add_argument(
         "stage",
-        choices=("crawl", "validate", "publish-dry-run", "publish", "publish-batch"),
+        choices=("crawl", "account-fetch", "account-analyze", "validate", "publish-dry-run", "publish", "publish-batch"),
         help="Run notebook-derived crawl/publish helpers and package validation.",
     )
     parser.add_argument("--manifest", type=Path, default=None)
     parser.add_argument("--port", type=int, default=9209)
     parser.add_argument("--materials-date", default=datetime.now().strftime("%Y-%m-%d"))
     parser.add_argument("--materials-dir", type=Path, default=None)
+    parser.add_argument("--materials-root", type=Path, default=None)
+    parser.add_argument("--account-metrics", action="append", type=Path, default=[])
+    parser.add_argument("--account-output", type=Path, default=None)
+    parser.add_argument("--account-output-dir", type=Path, default=None)
+    parser.add_argument("--scroll-batches", type=int, default=5)
     parser.add_argument("--keyword", action="append", dest="keywords")
     parser.add_argument("--keywords-file", type=Path, default=None)
     parser.add_argument("--detail-limit", type=int, default=20)
@@ -47,7 +52,9 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    manifest = args.manifest or (None if args.stage in {"crawl", "publish-batch"} else latest_manifest())
+    manifest = args.manifest or (
+        None if args.stage in {"crawl", "account-fetch", "account-analyze", "publish-batch"} else latest_manifest()
+    )
     package = manifest.parents[1] if manifest else None
 
     if args.stage == "crawl":
@@ -63,6 +70,27 @@ def main() -> None:
             command.append("--links-only")
         if args.details_only:
             command.append("--details-only")
+        run(command)
+    elif args.stage == "account-fetch":
+        command = [
+            sys.executable,
+            "scripts/fetch_account_metrics.py",
+            "--port",
+            str(args.port),
+            "--scroll-batches",
+            str(args.scroll_batches),
+        ]
+        if args.account_output:
+            command.extend(["--output", str(args.account_output)])
+        run(command)
+    elif args.stage == "account-analyze":
+        command = [sys.executable, "scripts/analyze_account_performance.py"]
+        for path in args.account_metrics:
+            command.extend(["--account-metrics", str(path)])
+        if args.materials_root:
+            command.extend(["--materials-root", str(args.materials_root)])
+        if args.account_output_dir:
+            command.extend(["--output-dir", str(args.account_output_dir)])
         run(command)
     elif args.stage == "validate":
         run([sys.executable, "scripts/validate_package.py", str(package)])

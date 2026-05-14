@@ -12,10 +12,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from time import sleep
+from time import perf_counter, sleep
 from typing import Any
 
 import pandas as pd
@@ -409,6 +410,27 @@ def open_image_publish_page(page, actions) -> None:
         pass
 
 
+def real_element(ele):
+    if ele is None or getattr(ele, "_type", "") == "NoneElement":
+        return None
+    return ele
+
+
+def element_has_size(ele) -> bool:
+    try:
+        width, height = ele.rect.size
+        return width > 0 and height > 0
+    except Exception:
+        return False
+
+
+def find_real_element(scope, selector: str, timeout: float = 2):
+    try:
+        return real_element(scope.ele(selector, timeout=timeout))
+    except Exception:
+        return None
+
+
 def scroll_down(page, actions, distance: int = 700) -> None:
     try:
         size = page.run_js("return {w: window.innerWidth, h: window.innerHeight};")
@@ -444,26 +466,66 @@ def human_scroll_down(page, actions, distance: int) -> None:
 
 
 def find_upload_control(page, first_image: bool = False):
-    selectors = ("tx=上传图片", ".upload-wrapper", ".entry") if first_image else (".entry", "tx=上传图片", ".upload-wrapper")
+    selectors = (
+        ".entry",
+        "tx=上传图片",
+        ".upload-wrapper",
+        ".upload-input",
+        "@type=file",
+    )
     for selector in selectors:
-        try:
-            ele = page.ele(selector, timeout=5)
-            if selector == ".upload-wrapper":
-                try:
-                    return ele.ele(".upload-input", timeout=1)
-                except Exception:
-                    return ele
-            return ele
-        except Exception:
+        ele = find_real_element(page, selector, timeout=5 if first_image else 2)
+        if not ele:
             continue
+        try:
+            is_image_file_input = (
+                ele.tag == "input"
+                and ele.attr("type") == "file"
+                and "image" in str(ele.attr("accept") or "").lower()
+            )
+        except Exception:
+            is_image_file_input = False
+        if is_image_file_input:
+            return ele
+        if not element_has_size(ele):
+            continue
+        return ele
     raise RuntimeError("找不到上传图片控件。")
+
+
+def current_uploaded_image_count(page) -> int:
+    try:
+        text = page.ele("tag:body", timeout=1).text
+    except Exception:
+        return 0
+    match = re.search(r"图片编辑\s*(\d+)/18", text) or re.search(r"(\d+)/18", text)
+    return int(match.group(1)) if match else 0
+
+
+def wait_uploaded_image_count(page, min_count: int, timeout: float = 45) -> None:
+    end = perf_counter() + timeout
+    while perf_counter() < end:
+        if current_uploaded_image_count(page) >= min_count:
+            return
+        page.wait(1)
+    raise RuntimeError(f"图片上传后未等到数量更新到 {min_count}/18。")
+
+
+def upload_file(upload, image: Path) -> None:
+    try:
+        if upload.tag == "input" and upload.attr("type") == "file":
+            upload.input(str(image))
+            return
+    except Exception:
+        pass
+    upload.click.to_upload(str(image))
 
 
 def upload_images(page, images: list[Path]) -> None:
     for idx, image in enumerate(images):
         upload = find_upload_control(page, first_image=(idx == 0))
-        upload.click.to_upload(str(image))
-        page.wait(2, 3) if idx == 0 else page.wait(1, 2)
+        upload_file(upload, image)
+        wait_uploaded_image_count(page, idx + 1)
 
 
 def fill_field(page, selectors: tuple[str, ...], value: str, field_name: str):
@@ -580,26 +642,79 @@ def first_existing_element(page, selectors: tuple[str, ...], field_name: str):
     raise RuntimeError(f"找不到{field_name}。") from last_error
 
 
+def find_button_by_text(page, text: str):
+    for selector in ("@class:bg-red", "tag:button"):
+        try:
+            for ele in page.eles(selector, timeout=2):
+                if text in str(getattr(ele, "text", "")) and element_has_size(ele):
+                    return ele
+        except Exception:
+            continue
+    return None
+
+
+def find_publish_button_in_shadow(page, text: str):
+    for host_selector in ("t:xhs-publish-btn", "tag:xhs-publish-btn"):
+        try:
+            host = page.ele(host_selector, timeout=5)
+            shadow_root = host.sr
+            if not shadow_root:
+                continue
+            for selector in (".ce-btn bg-red", "tx=" + text, "text=" + text):
+                try:
+                    button = shadow_root.ele(selector, timeout=3)
+                    button_text = str(getattr(button, "text", ""))
+                    if (not text or text in button_text) and element_has_size(button):
+                        return button
+                except Exception:
+                    continue
+        except Exception:
+            continue
+    return None
+
+
 def click_submit(page, actions, schedule_time: str | None = None) -> None:
     if schedule_time:
         page.wait(2, 3)
-        button = first_existing_element(page, (".:publishBtn", "tx=定时发布", "text=定时发布"), "定时发布按钮")
+        button = (
+            find_publish_button_in_shadow(page, "定时发布")
+            or find_button_by_text(page, "定时发布")
+            or first_existing_element(
+                page,
+                (".:publishBtn", "tx=定时发布", "text=定时发布"),
+                "定时发布按钮",
+            )
+        )
         actions.move_to(ele_or_loc=button).click()
         print(f"已点击定时发布：{schedule_time}")
         return
 
-    button = first_existing_element(page, (".:publishBtn", "tx=发布", "text=发布", "tx=立即发布", "text=立即发布"), "发布按钮")
+    button = (
+        find_publish_button_in_shadow(page, "发布")
+        or find_button_by_text(page, "发布")
+        or first_existing_element(
+            page,
+            (".:publishBtn", "tx=发布", "text=发布", "tx=立即发布", "text=立即发布"),
+            "发布按钮",
+        )
+    )
     actions.move_to(ele_or_loc=button).click()
     print("已点击发布按钮。")
 
 
 def check_publish_success(page) -> bool:
-    try:
-        fabuchengg = page.ele("text=发布成功").text
-        print(fabuchengg)
-        return True
-    except Exception:
-        return False
+    for _ in range(10):
+        if "published=true" in str(page.url):
+            print("发布后页面 URL 包含 published=true。")
+            return True
+        for selector in ("text=发布成功", "text=定时发布成功"):
+            try:
+                print(page.ele(selector, timeout=1).text)
+                return True
+            except Exception:
+                continue
+        page.wait(1)
+    return False
 
 
 def publish_one_item(page, actions, item: PublishItem, submit: bool = True) -> bool:
