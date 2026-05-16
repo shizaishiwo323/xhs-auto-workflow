@@ -1,0 +1,6 @@
+interface:
+  display_name: "XHS Material Pipeline"
+  short_description: "结合账号评论互动分析小红书素材，生成发布包并校验图片"
+  default_prompt: "Use $xhs-material-pipeline to analyze my Xiaohongshu source folder and create a publish-ready daily material package."
+policy:
+  allow_implicit_invocation: true

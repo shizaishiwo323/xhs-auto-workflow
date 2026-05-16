@@ -6,12 +6,64 @@
   },
   "material_generation": {
     "output_root": "outputs/materials",
-    "package_contract": "每个选题目录内应包含 00_自动发推适配/publish_manifest.json"
+    "package_contract": "每个选题目录内应包含 00_自动发推适配/publish_manifest.json",
+    "topic_contract": {
+      "preferred_manifest_field": "recommended_topics",
+      "compatible_manifest_fields": ["topic_tags", "topics", "tags", "hot_topics"],
+      "source": "04_分析依据/爆款参考矩阵.md 中从爆款笔记提炼的话题标签",
+      "body_rule": "话题只保存为独立元数据，不写入 body 或 推文"
+    },
+    "collection_contract": {
+      "preferred_manifest_field": "collection_name",
+      "compatible_manifest_fields": ["collection_title", "target_collection", "collection"],
+      "intro_fields": ["collection_intro", "collection_description", "collection_desc"],
+      "limits": {
+        "name_chars": 20,
+        "intro_chars": 50
+      },
+      "fixed_collections": ["塔罗牌合集", "数据资源的合集", "随便发发合集"],
+      "classification_rule": "塔罗内容归入塔罗牌合集；数据爬取、数据分析、公开数据、表格字段等内容归入数据资源的合集；热点素材、泛内容和其他内容归入随便发发合集",
+      "selection_rule": "声明原创之后、定时发布之前，只选择已存在的固定合集；找不到目标合集时报错，不自动创建"
+    },
+    "tarot_content_contract": {
+      "status": "allowed_with_boundaries",
+      "keyword_policy": "标题、正文自然语言和推荐话题中可以直接出现“塔罗牌”“塔罗”等字眼；话题仍只写入 recommended_topics 等独立元数据，由发布器在正文末尾逐个输入。",
+      "required_manifest_topics": ["塔罗牌"],
+      "preferred_collection_name": "塔罗牌合集",
+      "compliant_framing": [
+        "塔罗牌牌面知识、牌阵学习、卡牌文化、美学与故事解读",
+        "以娱乐参考、自我觉察、情绪复盘、关系沟通启发来表达",
+        "强调选择权在读者本人，不把牌面解读写成现实承诺"
+      ],
+      "avoid_claims": [
+        "预测未来、断言结局、改变未来、改命改运、消灾转运",
+        "运势测算、实现愿望、代参拜、代开光、符箓、能量水晶等封建迷信服务或商品",
+        "以塔罗牌为噱头售卖服务、引导私信付费占卜、收集生日八字手机号等隐私",
+        "把塔罗牌与未成年人、学业、考试、升学结果强关联",
+        "点赞、评论、收藏、互关、抽奖或免费福利换取互动"
+      ],
+      "safe_cta_rule": "结尾只做内容讨论，例如询问读者更想看哪张牌的牌面含义；不得用互动换福利、换解读或换资源。"
+    }
   },
   "publish": {
     "script": "scripts/publish_from_manifest.py",
     "batch_script": "scripts/publish_batch.py",
     "default_port": 9209,
+    "topic_input_sequence": [
+      "正文输入完成后额外输入一个换行",
+      "确认光标在正文最后位置",
+      "对每个话题执行 正文输入框.input(f\"#{话题}\")",
+      "sleep(0.5)",
+      "正文输入框.input(\"\\n\")"
+    ],
+    "collection_sequence": [
+      "声明原创",
+      "展开合集列表",
+      "读取已有合集并选择固定三分类中的目标合集",
+      "找不到目标合集时停止并报错",
+      "校验页面已选合集",
+      "继续定时发布"
+    ],
     "limits": {
       "title_chars": 20,
       "body_chars": 1000,

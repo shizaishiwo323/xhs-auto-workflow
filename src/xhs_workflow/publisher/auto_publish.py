@@ -38,6 +38,43 @@ ROOT = Path(__file__).resolve().parents[3]
 TITLE_LIMIT = 20
 BODY_LIMIT = 1000
 IMAGE_LIMIT = 18
+TOPIC_FIELDS = ("recommended_topics", "topic_tags", "topics", "tags", "hot_topics")
+COLLECTION_FIELDS = ("collection_name", "collection_title", "target_collection", "collection")
+COLLECTION_INTRO_FIELDS = ("collection_intro", "collection_description", "collection_desc")
+COLLECTION_TITLE_LIMIT = 20
+COLLECTION_INTRO_LIMIT = 50
+TAROT_COLLECTION = "塔罗牌合集"
+DATA_COLLECTION = "数据资源的合集"
+CASUAL_COLLECTION = "随便发发合集"
+FIXED_COLLECTIONS = (TAROT_COLLECTION, DATA_COLLECTION, CASUAL_COLLECTION)
+DATA_COLLECTION_KEYWORDS = (
+    "数据",
+    "爬虫",
+    "爬取",
+    "采集",
+    "公开",
+    "字段",
+    "表格",
+    "分析",
+    "可视化",
+    "清洗",
+    "python",
+    "pandas",
+    "excel",
+    "api",
+)
+TAROT_COLLECTION_KEYWORDS = ("塔罗", "tarot")
+TAROT_CONTENT_KEYWORDS = ("塔罗", "tarot")
+TAROT_RISK_PATTERNS = (
+    ("预测未来或断言结局", r"(预测|预言|断言|测出).{0,8}(未来|结局|结果|命运)"),
+    ("改变未来或改运消灾", r"(改变未来|改命|改运|转运|消灾|化解厄运|逆天改命)"),
+    ("运势测算或实现愿望", r"(运势测算|每日运势|本周运势|实现愿望|愿望成真|心想事成)"),
+    ("封建迷信服务或商品", r"(代参拜|代开光|开光|符箓|法事|能量水晶|灵验)"),
+    ("付费占卜或私域引流", r"(付费占卜|私信.{0,6}占卜|私聊.{0,6}占卜|加微|加v|VX|微信)"),
+    ("隐私信息收集", r"(生日|生辰|八字|手机号|身份证).{0,8}(发我|私信|填写|提供)"),
+    ("未成年人学业绑定", r"(未成年|小学生|初中生|高中生|学生|考试|升学|中考|高考).{0,12}(塔罗|占卜|运势|预测)"),
+    ("互动换福利", r"(点赞|评论|收藏|关注|互关|互赞).{0,10}(福利|抽奖|领取|获得|好运|解读|资源)"),
+)
 DEFAULT_DAILY_TIME_SLOTS = ("12:00", "16:00")
 DEFAULT_TOPIC_ORDER = [
     "数据获取爬虫_公开数据流程",
@@ -51,6 +88,8 @@ HISTORY_COLUMNS = [
     "title",
     "body_chars",
     "image_count",
+    "topic_tags_json",
+    "collection_name",
     "schedule_time",
     "manifest_path",
     "cover_path",
@@ -100,6 +139,9 @@ class PublishItem:
     title: str
     body: str
     images: list[Path]
+    topic_tags: list[str]
+    collection_name: str
+    collection_intro: str
     schedule_time: str | None = None
 
 
@@ -156,6 +198,116 @@ def pick_text(manifest: dict[str, Any]) -> tuple[str, str]:
     return title[:TITLE_LIMIT], body[:BODY_LIMIT]
 
 
+def has_tarot_context(text: str) -> bool:
+    normalized = str(text or "").lower()
+    return any(keyword.lower() in normalized for keyword in TAROT_CONTENT_KEYWORDS)
+
+
+def is_negated_context(text: str, start: int) -> bool:
+    prefix = str(text or "")[max(0, start - 8):start]
+    return any(marker in prefix for marker in ("不", "不要", "不做", "不是", "不能", "避免", "拒绝", "非"))
+
+
+def find_tarot_safety_issues(*parts: Any) -> list[str]:
+    text = " ".join(str(part or "") for part in parts)
+    if not has_tarot_context(text):
+        return []
+
+    issues: list[str] = []
+    for label, pattern in TAROT_RISK_PATTERNS:
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+            if not is_negated_context(text, match.start()):
+                issues.append(f"塔罗牌内容触及边界：{label}")
+                break
+    return issues
+
+
+def normalize_topic_tag(raw: Any) -> str:
+    return str(raw or "").strip().lstrip("#").strip()
+
+
+def pick_topic_tags(manifest: dict[str, Any]) -> list[str]:
+    tags: list[str] = []
+    for field in TOPIC_FIELDS:
+        raw = manifest.get(field)
+        if raw is None:
+            continue
+        if isinstance(raw, str):
+            candidates = re.split(r"[\s,，、;；|]+", raw)
+        elif isinstance(raw, list):
+            candidates = raw
+        else:
+            candidates = [raw]
+
+        for candidate in candidates:
+            tag = normalize_topic_tag(candidate)
+            if tag and tag not in tags:
+                tags.append(tag)
+        if tags:
+            break
+    return tags
+
+
+def _first_manifest_text(manifest: dict[str, Any], fields: tuple[str, ...]) -> str:
+    for field in fields:
+        raw = manifest.get(field)
+        if isinstance(raw, dict):
+            raw = raw.get("name") or raw.get("title")
+        text = str(raw or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _short_text(value: str, limit: int) -> str:
+    return str(value or "").strip()[:limit]
+
+
+def canonical_collection_name(text: str) -> str | None:
+    normalized = re.sub(r"\s+", "", str(text or "").strip()).lower()
+    if not normalized:
+        return None
+    for collection in FIXED_COLLECTIONS:
+        collection_norm = re.sub(r"\s+", "", collection).lower()
+        if collection_norm in normalized or normalized in collection_norm:
+            return collection
+    if any(keyword.lower() in normalized for keyword in TAROT_COLLECTION_KEYWORDS):
+        return TAROT_COLLECTION
+    if any(keyword.lower() in normalized for keyword in DATA_COLLECTION_KEYWORDS):
+        return DATA_COLLECTION
+    return None
+
+
+def infer_collection_name(manifest: dict[str, Any], title: str, topic_folder: str, topic_tags: list[str]) -> str:
+    explicit = _first_manifest_text(manifest, COLLECTION_FIELDS)
+    if explicit:
+        canonical = canonical_collection_name(explicit)
+        if canonical:
+            return canonical
+
+    text = " ".join([title, topic_folder, " ".join(topic_tags)])
+    canonical = canonical_collection_name(text)
+    return canonical or CASUAL_COLLECTION
+
+
+def infer_collection_intro(manifest: dict[str, Any], collection_name: str, title: str, topic_tags: list[str]) -> str:
+    explicit = _first_manifest_text(manifest, COLLECTION_INTRO_FIELDS)
+    if explicit:
+        return _short_text(explicit, COLLECTION_INTRO_LIMIT)
+
+    if topic_tags:
+        intro = "、".join(topic_tags[:4]) + "相关内容整理"
+    else:
+        intro = f"{title}相关内容整理"
+    return _short_text(intro or f"{collection_name}简介", COLLECTION_INTRO_LIMIT)
+
+
+def pick_collection(manifest: dict[str, Any], title: str, topic_folder: str, topic_tags: list[str]) -> tuple[str, str]:
+    collection_name = infer_collection_name(manifest, title, topic_folder, topic_tags)
+    collection_intro = infer_collection_intro(manifest, collection_name, title, topic_tags)
+    return collection_name, collection_intro
+
+
 def ordered_images(manifest: dict[str, Any], manifest_path: Path, config: PublishConfig) -> list[Path]:
     items = sorted(manifest.get("images", []), key=lambda item: item.get("upload_order", 999))
     return [resolve_image_path(str(item.get("path", "")), manifest_path, config) for item in items]
@@ -210,6 +362,15 @@ def validate_item(item: PublishItem) -> list[str]:
         issues.append("缺少正文")
     if len(item.body) > BODY_LIMIT:
         issues.append(f"正文超过 {BODY_LIMIT} 字：{len(item.body)}")
+    if not item.topic_tags:
+        issues.append("缺少话题标签：请在 manifest 中提供 recommended_topics/topic_tags/topics/tags")
+    if not item.collection_name:
+        issues.append("缺少合集名称")
+    if len(item.collection_name) > COLLECTION_TITLE_LIMIT:
+        issues.append(f"合集名称超过 {COLLECTION_TITLE_LIMIT} 字：{len(item.collection_name)}")
+    if len(item.collection_intro) > COLLECTION_INTRO_LIMIT:
+        issues.append(f"合集简介超过 {COLLECTION_INTRO_LIMIT} 字：{len(item.collection_intro)}")
+    issues.extend(find_tarot_safety_issues(item.title, item.body, item.topic_tags, item.collection_name, item.collection_intro))
     if not item.images:
         issues.append("缺少图片")
     if len(item.images) > IMAGE_LIMIT:
@@ -250,6 +411,8 @@ def make_history_record(item: PublishItem, config: PublishConfig, *, status: str
         "title": item.title,
         "body_chars": len(item.body),
         "image_count": len(item.images),
+        "topic_tags_json": json.dumps(item.topic_tags, ensure_ascii=False),
+        "collection_name": item.collection_name,
         "schedule_time": item.schedule_time or "",
         "manifest_path": str(item.manifest_path),
         "cover_path": str(item.images[0]) if item.images else "",
@@ -314,6 +477,8 @@ def build_publish_item(
     schedule_time: str | None = None,
 ) -> PublishItem:
     title, body = pick_text(manifest)
+    topic_tags = pick_topic_tags(manifest)
+    collection_name, collection_intro = pick_collection(manifest, title, manifest_path.parents[1].name, topic_tags)
     return PublishItem(
         topic_folder=manifest_path.parents[1].name,
         manifest_path=manifest_path,
@@ -321,6 +486,9 @@ def build_publish_item(
         title=title,
         body=body,
         images=ordered_images(manifest, manifest_path, config),
+        topic_tags=topic_tags,
+        collection_name=collection_name,
+        collection_intro=collection_intro,
         schedule_time=schedule_time,
     )
 
@@ -360,6 +528,8 @@ def print_publish_queue(publish_queue: list[PublishItem]) -> None:
         print("  标题：", item.title, f"({len(item.title)}/{TITLE_LIMIT})")
         print("  正文：", f"{len(item.body)}/{BODY_LIMIT}")
         print("  图片：", len(item.images), f"/{IMAGE_LIMIT}")
+        print("  话题：", "、".join(item.topic_tags) if item.topic_tags else "未设置")
+        print("  合集：", item.collection_name, f"({len(item.collection_name)}/{COLLECTION_TITLE_LIMIT})")
         print("  定时：", item.schedule_time)
         print("  manifest：", item.manifest_path)
         for image in item.images:
@@ -549,32 +719,159 @@ def move_body_cursor_after_input(actions) -> None:
     actions.key_down(Keys.END).key_up(Keys.END)
 
 
-def select_recommended_topics(page, actions) -> None:
-    scroll_down(page, actions, 500)
-    for _ in range(10):
-        try:
-            topic = page.ele(".tag-group", timeout=1).child("t:span", index=1)
-            actions.move_to(ele_or_loc=topic).click()
-            sleep(1)
-        except Exception:
+def input_preselected_topic_tags(input_target, topic_tags: list[str]) -> None:
+    for tag in topic_tags:
+        input_target.input(f"#{tag}")
+        sleep(0.5)
+        input_target.input("\n")
+
+
+def normalize_collection_text(value: str) -> str:
+    return re.sub(r"\s+", "", str(value or "").strip())
+
+
+def parse_collection_names(raw_text: str) -> list[str]:
+    names: list[str] = []
+    for line in str(raw_text or "").splitlines():
+        name = line.strip()
+        if not name or "创建合集" in name or name in {"合集", "选择合集"}:
             continue
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def collection_match_score(target: str, existing: str, topic_tags: list[str]) -> int:
+    canonical_target = canonical_collection_name(target)
+    canonical_existing = canonical_collection_name(existing)
+    if canonical_target and canonical_existing:
+        return 100 if canonical_target == canonical_existing else 0
+
+    target_norm = normalize_collection_text(target)
+    existing_norm = normalize_collection_text(existing)
+    if not target_norm or not existing_norm:
+        return 0
+    if target_norm == existing_norm:
+        return 100
+    if target_norm in existing_norm or existing_norm in target_norm:
+        return 80
+
+    score = 0
+    for tag in topic_tags:
+        tag_norm = normalize_collection_text(tag)
+        if tag_norm and (tag_norm in existing_norm or existing_norm in tag_norm):
+            score += 20
+    for keyword in ("数据", "爬虫", "爬取", "采集", "公开", "分析", "塔罗"):
+        if keyword in target_norm and keyword in existing_norm:
+            score += 15
+    return score
+
+
+def best_existing_collection(target: str, existing_names: list[str], topic_tags: list[str]) -> str | None:
+    target_norm = normalize_collection_text(target)
+    for name in existing_names:
+        if normalize_collection_text(name) == target_norm:
+            return name
+    for name in existing_names:
+        existing_norm = normalize_collection_text(name)
+        if target_norm and (target_norm in existing_norm or existing_norm in target_norm):
+            return name
+
+    scored = [(collection_match_score(target, name, topic_tags), name) for name in existing_names]
+    scored = [(score, name) for score, name in scored if score >= 20]
+    if not scored:
+        return None
+    scored.sort(key=lambda item: (-item[0], len(item[1])))
+    return scored[0][1]
+
+
+def open_collection_popover(page, actions):
+    sleep(3)
+    wrapper = page.ele(".collection-plugin-wrapper", timeout=5)
+    actions.move_to(ele_or_loc=wrapper).click()
+    sleep(1)
+    return page.ele(".collection-plugin-popover-content", timeout=5)
+
+
+def select_or_create_collection(page, actions, item: PublishItem) -> None:
+    popover = open_collection_popover(page, actions)
+    existing_text = str(getattr(popover, "text", "") or "")
+    print(existing_text)
+    existing_names = parse_collection_names(existing_text)
+    target_collection = best_existing_collection(item.collection_name, existing_names, item.topic_tags)
+
+    if target_collection:
+        target = popover.ele(f"tx:{target_collection}", timeout=3)
+        actions.move_to(ele_or_loc=target).click()
+        sleep(1)
+        selected = page.ele(".collection-name", timeout=5).text
+        print(selected)
+        if normalize_collection_text(target_collection) not in normalize_collection_text(selected):
+            raise RuntimeError(f"合集选择后校验不一致：期望 {target_collection}，页面显示 {selected}")
+        return
+
+    available = "、".join(existing_names) if existing_names else "未读取到合集"
+    fixed = "、".join(FIXED_COLLECTIONS)
+    raise RuntimeError(
+        f"未找到目标合集：{item.collection_name}。当前规则只使用已创建的 3 个合集（{fixed}），"
+        f"不会自动新建合集。页面已读取合集：{available}"
+    )
 
 
 def declare_original(page, actions) -> None:
     human_scroll_down(page, actions, 600)
 
     sleep(3)
-    try:
-        yuanchuang = page.ele(".d-switch-indicator", index=1, timeout=5)
-        actions.move_to(ele_or_loc=yuanchuang).click()
+    last_error: Exception | None = None
 
-        yuanchuang2 = page.ele(".:d-checkbox-indicator", index=1, timeout=5)
-        actions.move_to(ele_or_loc=yuanchuang2).click()
+    def click_first(candidates: tuple[tuple[str, int], ...], label: str, timeout: float = 3) -> bool:
+        nonlocal last_error
+        for selector, index in candidates:
+            try:
+                element = page.ele(selector, index=index, timeout=timeout)
+                actions.move_to(ele_or_loc=element).click()
+                print(f"已点击{label}：{selector}")
+                last_error = None
+                return True
+            except Exception as exc:
+                last_error = exc
+        return False
 
-        yuanchuang3 = page.ele("tx= 声明原创 ", index=1, timeout=5)
-        actions.move_to(ele_or_loc=yuanchuang3).click()
-    except Exception as exc:
-        raise RuntimeError("声明原创点击失败。") from exc
+    switch_clicked = click_first(
+        (
+            (".d-switch-indicator", 1),
+            (".d-switch-box", 1),
+            ("text=声明原创", 1),
+            ("tx=声明原创", 1),
+        ),
+        "声明原创开关",
+        timeout=5,
+    )
+    if not switch_clicked:
+        raise RuntimeError("声明原创点击失败。") from last_error
+
+    sleep(1)
+    click_first(
+        (
+            (".d-checkbox-indicator", 1),
+            (".:d-checkbox-indicator", 1),
+            ("text=我已阅读并同意", 1),
+            ("tx=我已阅读并同意", 1),
+        ),
+        "原创声明协议勾选框",
+        timeout=2,
+    )
+    click_first(
+        (
+            ("tx= 声明原创 ", 1),
+            ("tx=声明原创", 1),
+            ("text=声明原创", 1),
+            ("text=确定", 1),
+            ("tx=确定", 1),
+        ),
+        "原创声明确认按钮",
+        timeout=2,
+    )
 
     human_scroll_down(page, actions, 300)
 
@@ -737,8 +1034,9 @@ def publish_one_item(page, actions, item: PublishItem, submit: bool = True) -> b
     move_body_cursor_after_input(actions)
     sleep(1)
 
-    select_recommended_topics(page, actions)
+    input_preselected_topic_tags(body_field, item.topic_tags)
     declare_original(page, actions)
+    select_or_create_collection(page, actions, item)
     if item.schedule_time:
         set_schedule_time(page, actions, item.schedule_time)
 
@@ -820,6 +1118,8 @@ def run_single_manifest(
     print("发布校验通过。")
     print(f"标题：{item.title}")
     print(f"图片数：{len(item.images)}")
+    print("话题：", "、".join(item.topic_tags))
+    print("合集：", item.collection_name)
     if item.schedule_time:
         print(f"定时时间：{item.schedule_time}")
 

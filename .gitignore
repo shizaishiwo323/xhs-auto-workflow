@@ -9,39 +9,24 @@ __pycache__/
 *.pyc
 archive/envs/
 
-# Local instructions and machine-specific project notes
-AGENTS.md
-
-# Local notebooks may contain browser state, outputs, or account context.
-notebooks/
-*.ipynb
-
 # Crawled data, generated material packages, publish history, and media.
 data/
 output/
 outputs/
 archive/
-xhs媒体下载/
+备份/
+**/备份/
+xhs媒体下载/*
+!xhs媒体下载/
+!xhs媒体下载/*.py
 xhs每日生成素材/
 xhs每日生成素材
+xhs视频生成素材/
+xhs视频生成素材
 docs/examples/
 
-# Binary and generated artifacts.
-*.csv
+# Local runtime data.
 *.jsonl
-*.xlsx
-*.xls
 *.parquet
 *.sqlite
 *.db
-*.pdf
-*.docx
-*.png
-*.jpg
-*.jpeg
-*.webp
-*.gif
-*.mp4
-*.mov
-*.m4a
-*.mp3

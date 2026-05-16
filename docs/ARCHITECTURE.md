@@ -15,8 +15,11 @@
 1. 用 `notebooks/scraper/xhs_scraper_formal.ipynb` 采集关键词笔记、详情和媒体。
 2. 把生成结果写入 `outputs/materials/YYYY-MM-DD/选题名/`。
 3. 每个选题目录产出 `00_自动发推适配/publish_manifest.json`。
-4. 用 `scripts/validate_package.py` 或 `scripts/run_pipeline.py validate` 检查标题、正文、图片数量和图片文件。
-5. 用 `scripts/publish_from_manifest.py` 读取 manifest 进行发布页面填充。
+4. 在 `publish_manifest.json` 中写入基于爆款参考提炼的 `recommended_topics`，并在 `04_分析依据/爆款参考矩阵.md` 中记录来源。
+5. 合集固定归入 `塔罗牌合集`、`数据资源的合集`、`随便发发合集` 三类；发布时只选择已存在合集，找不到目标合集则停止。
+6. 塔罗牌内容可以在标题、正文自然语言和 `recommended_topics` 中直接出现 `塔罗牌`，但必须按牌面知识、卡牌文化、娱乐参考、自我觉察或情绪复盘处理，避开预测未来、改运消灾、实现愿望、付费占卜服务和互动换福利。
+7. 用 `scripts/validate_package.py` 或 `scripts/run_pipeline.py validate` 检查标题、正文、话题、合集、图片数量和图片文件。
+8. 用 `scripts/publish_from_manifest.py` 读取 manifest 进行发布页面填充。
 
 ## 二、目录层级
 
@@ -85,9 +88,11 @@ README.md
 核心职责：
 
 - 读取 `publish_manifest.json`。
-- 校验标题、正文和图片数量。
+- 校验标题、正文、话题、合集和图片数量。
 - 按 `upload_order` 上传图片。
 - 填写标题和正文。
+- 正文末尾光标定位完成后，按 `#话题 -> 等待 0.5 秒 -> 回车` 的顺序逐个输入 `recommended_topics`。
+- 声明原创后展开合集列表，按三分类选择 `塔罗牌合集`、`数据资源的合集` 或 `随便发发合集`；没有目标合集时停止并报错，不自动创建。
 - dry-run 默认不点击发布，带 `--submit` 才真正点击发布按钮。
 
 当前代码：

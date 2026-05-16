@@ -13,6 +13,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def print_publish_topic_hint() -> None:
+    print(
+        "发布话题规则：publish_manifest.json 需提供 recommended_topics/topic_tags/topics/tags；"
+        "发布器会在正文末尾逐个输入 #话题、等待 0.5 秒、再回车。"
+        "合集规则：可提供 collection_name/collection_title/target_collection；"
+        "发布器会归一到塔罗牌合集、数据资源的合集、随便发发合集，"
+        "声明原创后只选择已存在合集，不再自动创建。",
+        flush=True,
+    )
+
+
 def run(command: list[str]) -> None:
     print("+ " + " ".join(command), flush=True)
     subprocess.run(command, cwd=ROOT, check=True)
@@ -95,8 +106,10 @@ def main() -> None:
     elif args.stage == "validate":
         run([sys.executable, "scripts/validate_package.py", str(package)])
     elif args.stage == "publish-dry-run":
+        print_publish_topic_hint()
         run([sys.executable, "scripts/publish_from_manifest.py", str(manifest), "--port", str(args.port), "--fill"])
     elif args.stage == "publish":
+        print_publish_topic_hint()
         run([
             sys.executable,
             "scripts/publish_from_manifest.py",
@@ -106,6 +119,7 @@ def main() -> None:
             "--submit",
         ])
     elif args.stage == "publish-batch":
+        print_publish_topic_hint()
         command = [
             sys.executable,
             "scripts/publish_batch.py",

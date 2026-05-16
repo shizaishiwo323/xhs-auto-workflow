@@ -18,7 +18,16 @@ from xhs_workflow.publisher.auto_publish import PublishConfig, run_single_manife
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Publish XHS note from publish_manifest.json")
+    parser = argparse.ArgumentParser(
+        description="Publish XHS note from publish_manifest.json",
+        epilog=(
+            "话题规则：manifest 需提供 recommended_topics/topic_tags/topics/tags。"
+            "发布器会在正文末尾逐个输入 #话题、等待 0.5 秒、再回车。"
+            "合集规则：可提供 collection_name/collection_title/target_collection；"
+            "发布器会归一到塔罗牌合集、数据资源的合集、随便发发合集，"
+            "声明原创后只选择已存在合集，不再自动创建。"
+        ),
+    )
     parser.add_argument("manifest", type=Path, help="Path to publish_manifest.json")
     parser.add_argument("--port", type=int, default=9209, help="Chromium remote debugging port")
     parser.add_argument("--fill", action="store_true", help="Fill the browser page but do not publish")
