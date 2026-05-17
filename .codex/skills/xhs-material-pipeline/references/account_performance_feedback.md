@@ -6,7 +6,7 @@ Use this reference when material generation should learn from the user's own Xia
 
 - Account metrics table from the creator backend, usually `小红书笔记数据分析.xlsx`, with columns like `笔记标题`, `日期`, `浏览量`, `评论量`, `点赞量`, `收藏量`, `转发量`, `add_time`.
 - Historical publish log: `outputs/publish_history/published_history.jsonl` or `.xlsx`/`.csv`.
-- Historical material packages: `outputs/materials/YYYY-MM-DD/选题名/00_自动发推适配/publish_manifest.json`, plus `README.md` and `04_分析依据/爆款参考矩阵.md` when present.
+- Historical material packages: `outputs/materials/YYYY-MM-DD/选题名/00_自动发推适配/publish_manifest.json`, plus `README.md` and existing notes under `04_分析依据/` when present.
 
 ## Project Interface
 

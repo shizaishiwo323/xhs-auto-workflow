@@ -15,7 +15,7 @@
 1. 用 `notebooks/scraper/xhs_scraper_formal.ipynb` 采集关键词笔记、详情和媒体。
 2. 把生成结果写入 `outputs/materials/YYYY-MM-DD/选题名/`。
 3. 每个选题目录产出 `00_自动发推适配/publish_manifest.json`。
-4. 在 `publish_manifest.json` 中写入基于爆款参考提炼的 `recommended_topics`，并在 `04_分析依据/爆款参考矩阵.md` 中记录来源。
+4. 在 `publish_manifest.json` 中写入基于爆款参考提炼的 `recommended_topics`；必要来源说明写入 `README.md` 或已有分析记录，不再生成固定的 `爆款参考矩阵.md`。
 5. 合集固定归入 `塔罗牌合集`、`数据资源的合集`、`随便发发合集` 三类；发布时只选择已存在合集，找不到目标合集则停止。
 6. 塔罗牌内容可以在标题、正文自然语言和 `recommended_topics` 中直接出现 `塔罗牌`，但必须按牌面知识、卡牌文化、娱乐参考、自我觉察或情绪复盘处理，避开预测未来、改运消灾、实现愿望、付费占卜服务和互动换福利。
 7. 用 `scripts/validate_package.py` 或 `scripts/run_pipeline.py validate` 检查标题、正文、话题、合集、图片数量和图片文件。

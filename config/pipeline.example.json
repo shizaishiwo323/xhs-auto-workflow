@@ -10,7 +10,7 @@
     "topic_contract": {
       "preferred_manifest_field": "recommended_topics",
       "compatible_manifest_fields": ["topic_tags", "topics", "tags", "hot_topics"],
-      "source": "04_分析依据/爆款参考矩阵.md 中从爆款笔记提炼的话题标签",
+      "source": "由素材生成 skill 基于爆款参考提炼，并写入 publish_manifest.json",
       "body_rule": "话题只保存为独立元数据，不写入 body 或 推文"
     },
     "collection_contract": {
