@@ -24,6 +24,8 @@ Primary entry:
 /Users/wangbin/anaconda3/bin/python scripts/run_pipeline.py crawl --port 9209 --detail-limit 20
 ```
 
+After crawl, `run_pipeline.py` checks the newest `output/*/summary.csv`. It requires at least 3 high-interaction references with both title and body text. If body text is missing, treat it as suspected risk-control/detail-page failure and do not use those rows for body-copy learning.
+
 Direct scraper entry:
 
 ```bash
@@ -54,6 +56,8 @@ output/YYYY-MM-DD/
 
 The README may mention `outputs/crawl`, but `ScraperConfig` defaults to `output/YYYY-MM-DD` unless `--output-root` is supplied. Inspect actual run output.
 
+Before material generation, inspect `summary.csv` or `posts/posts_topN.xlsx` for `note_text`/`推文`/`正文`. Rows with title and interaction data but empty body can only inform title/cover direction, not body structure.
+
 ## Material Generation
 
 Material generation must be delegated to `$xhs-material-pipeline`. Do not execute an equivalent package-creation process directly from this skill.
@@ -65,6 +69,7 @@ Pass `$xhs-material-pipeline`:
 - publish history: `outputs/publish_history/published_history.*`;
 - community guideline PDF: `docs/xhs_community_guidelines.pdf`;
 - required package destination: `outputs/materials/YYYY-MM-DD/选题名称/`.
+- material generation contract: complete references only for body learning; final copy must use humanizer; usable reference images must be used as reference base images and factual sources for imagegen secondary creation; `imagegen生成记录.md` must record reference image paths, retained facts/fields/code/results/scene/order, redraw/re-layout actions, cleanup of account/watermark/QR/contact/private data, and final upload paths.
 
 `$xhs-material-pipeline` owns reference learning, copywriting, visual creation, imagegen usage, split/watermark handling, adapter files, README, manifest updates, and its own validation. This workflow resumes only after that skill returns a complete package.
 
@@ -91,6 +96,9 @@ Manifest contract:
 - `images[]` must list final upload images with `path` and `upload_order`.
 - Cover image should be upload order 1.
 - Body must not include hashtag topic blocks.
+- `humanizer_used` must be `true`, with `humanizer_record` pointing to `04_分析依据/humanizer润色记录.md`.
+- `imagegen_used` must be `true` unless `imagegen_skipped_reason` is explicit; when reference images exist, do not skip imagegen.
+- When `imagegen_used` is `true`, `imagegen_record` must point to `04_分析依据/imagegen生成记录.md`, and that record must include reference-image learning and secondary-creation evidence, not just "参考构图".
 
 ## Validate
 
@@ -113,6 +121,9 @@ Validation limits:
 - images: 18 max;
 - all image paths must exist;
 - wide contact sheets must be split before upload.
+- humanizer record and `humanizer_used: true` are mandatory.
+- imagegen record plus `imagegen_used: true` or explicit `imagegen_skipped_reason` are mandatory.
+- imagegen record must include reference-image path/retained information/secondary-creation/cleanup/final-path evidence when generated images are used.
 
 ## Scheduled Publish
 

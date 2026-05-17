@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from datetime import datetime
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -27,6 +29,60 @@ def print_publish_topic_hint() -> None:
 def run(command: list[str]) -> None:
     print("+ " + " ".join(command), flush=True)
     subprocess.run(command, cwd=ROOT, check=True)
+
+
+def latest_crawl_summary(since: float | None = None) -> Path | None:
+    summaries = sorted((ROOT / "output").glob("*/summary.csv"), key=lambda path: path.stat().st_mtime)
+    if since is not None:
+        summaries = [path for path in summaries if path.stat().st_mtime >= since]
+    return summaries[-1] if summaries else None
+
+
+def is_complete_reference(row: dict[str, str]) -> bool:
+    title = str(row.get("title") or row.get("标题") or "").strip()
+    body = str(row.get("note_text") or row.get("推文") or row.get("正文") or "").strip()
+    status = str(row.get("detail_status") or "").strip()
+    return bool(title and body and (not status or status == "ok"))
+
+
+def check_crawl_reference_completeness(min_complete_references: int, since: float | None = None) -> bool:
+    summary_path = latest_crawl_summary(since=since)
+    if summary_path is None:
+        print("爬取完整性检查：未找到本次新生成的 output/*/summary.csv，无法确认爆款参考是否完整。", file=sys.stderr)
+        return False
+
+    with summary_path.open("r", encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+
+    total = len(rows)
+    complete_rows = [row for row in rows if is_complete_reference(row)]
+    missing_body_rows = [
+        row for row in rows
+        if str(row.get("title") or row.get("标题") or "").strip()
+        and not str(row.get("note_text") or row.get("推文") or row.get("正文") or "").strip()
+    ]
+
+    print(
+        f"爬取完整性检查：{len(complete_rows)}/{total} 条参考同时包含标题和正文；"
+        f"最低要求 {min_complete_references} 条。文件：{summary_path}",
+        flush=True,
+    )
+    if len(complete_rows) >= min_complete_references:
+        return True
+
+    print(
+        "参考不足：高互动笔记缺少正文，疑似详情页被风控、登录态异常或正文选择器失效。"
+        "本次结果只能学习标题/封面入口，不能学习正文写法；请重新爬取、修复详情抓取，"
+        "或手动补充至少 3 条包含标题和正文的爆款参考。",
+        file=sys.stderr,
+    )
+    if missing_body_rows:
+        sample_titles = [
+            str(row.get("title") or row.get("标题") or "").strip()
+            for row in missing_body_rows[:3]
+        ]
+        print("缺正文样例标题：" + "；".join(sample_titles), file=sys.stderr)
+    return False
 
 
 def latest_manifest() -> Path:
@@ -58,6 +114,8 @@ def main() -> None:
     parser.add_argument("--video-quality", choices=("highest", "lowest"), default="highest")
     parser.add_argument("--image-quality", choices=("highest", "lowest", "none"), default="highest")
     parser.add_argument("--image-resolution-mode", choices=("best", "all"), default="best")
+    parser.add_argument("--min-complete-references", type=int, default=3)
+    parser.add_argument("--allow-incomplete-references", action="store_true")
     parser.add_argument("--links-only", action="store_true")
     parser.add_argument("--details-only", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -69,6 +127,7 @@ def main() -> None:
     package = manifest.parents[1] if manifest else None
 
     if args.stage == "crawl":
+        crawl_started_at = time.time()
         command = [sys.executable, "scripts/run_scraper.py", "--port", str(args.port), "--detail-limit", str(args.detail_limit)]
         command.extend(["--video-quality", args.video_quality])
         command.extend(["--image-quality", args.image_quality])
@@ -82,6 +141,11 @@ def main() -> None:
         if args.details_only:
             command.append("--details-only")
         run(command)
+        if not args.links_only and not check_crawl_reference_completeness(args.min_complete_references, since=crawl_started_at):
+            if args.allow_incomplete_references:
+                print("已按 --allow-incomplete-references 放行不完整参考；后续只能学习标题/封面，不能学习正文写法。")
+            else:
+                raise SystemExit(2)
     elif args.stage == "account-fetch":
         command = [
             sys.executable,

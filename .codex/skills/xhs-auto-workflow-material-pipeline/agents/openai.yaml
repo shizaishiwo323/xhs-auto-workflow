@@ -1,4 +1,4 @@
 interface:
   display_name: "XHS Auto Workflow + Material Pipeline"
   short_description: "爬取后调用素材管线并定时发布"
-  default_prompt: "Use $xhs-auto-workflow-material-pipeline to crawl latest XHS data, call $xhs-material-pipeline to create publish materials, schedule the note for tomorrow daytime, and send me a Gmail report."
+  default_prompt: "Use $xhs-auto-workflow-material-pipeline to inventory/crawl XHS data, then explicitly invoke $xhs-material-pipeline to create the publish-ready material package with humanizer final copy and imagegen secondary-created visuals from reference images before validation, scheduling, and Gmail reporting."

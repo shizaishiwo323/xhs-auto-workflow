@@ -21,6 +21,8 @@ from typing import Any
 
 import pandas as pd
 
+from xhs_workflow.materials.validate_xhs_package import validate as validate_material_package
+
 try:
     from xhs_notify import notify_failure, send_email
 except Exception:
@@ -476,6 +478,12 @@ def build_publish_item(
     publish_key: str | None = None,
     schedule_time: str | None = None,
 ) -> PublishItem:
+    package_issues = validate_material_package_for_publish(manifest_path)
+    if package_issues:
+        raise ValueError(
+            f"{manifest_path.parents[1].name} 发布前素材包门禁未通过："
+            + "；".join(package_issues)
+        )
     title, body = pick_text(manifest)
     topic_tags = pick_topic_tags(manifest)
     collection_name, collection_intro = pick_collection(manifest, title, manifest_path.parents[1].name, topic_tags)
@@ -491,6 +499,12 @@ def build_publish_item(
         collection_intro=collection_intro,
         schedule_time=schedule_time,
     )
+
+
+def validate_material_package_for_publish(manifest_path: Path) -> list[str]:
+    package = manifest_path.parents[1]
+    result = validate_material_package(package, composite_threshold=1.25)
+    return list(result.get("issues") or [])
 
 
 def load_publish_queue(config: PublishConfig) -> list[PublishItem]:
@@ -691,11 +705,49 @@ def upload_file(upload, image: Path) -> None:
     upload.click.to_upload(str(image))
 
 
+def upload_files(upload, images: list[Path]) -> None:
+    file_paths = [str(image) for image in images]
+    try:
+        if upload.tag == "input" and upload.attr("type") == "file":
+            upload.input(file_paths)
+            return
+    except Exception:
+        pass
+    upload.click.to_upload(file_paths)
+
+
 def upload_images(page, images: list[Path]) -> None:
+    if not images:
+        return
+
+    if len(images) > 1:
+        try:
+            upload = find_upload_control(page, first_image=True)
+            upload_files(upload, images)
+            wait_uploaded_image_count(page, len(images), timeout=max(60, 25 * len(images)))
+            return
+        except Exception as exc:
+            current_count = current_uploaded_image_count(page)
+            if current_count:
+                raise RuntimeError(
+                    f"批量上传图片后只识别到 {current_count}/{len(images)} 张，请刷新发布页后重试。"
+                ) from exc
+            print(f"批量上传图片失败，准备逐张重试：{exc}")
+
     for idx, image in enumerate(images):
-        upload = find_upload_control(page, first_image=(idx == 0))
-        upload_file(upload, image)
-        wait_uploaded_image_count(page, idx + 1)
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                upload = find_upload_control(page, first_image=(idx == 0))
+                upload_file(upload, image)
+                wait_uploaded_image_count(page, idx + 1)
+                break
+            except Exception as exc:
+                last_error = exc
+                print(f"第{idx + 1}张图片上传失败，准备重试 {attempt}/3：{exc}")
+                page.wait(2)
+        else:
+            raise RuntimeError(f"第{idx + 1}张图片上传失败：{image}") from last_error
 
 
 def fill_field(page, selectors: tuple[str, ...], value: str, field_name: str):
@@ -1102,12 +1154,16 @@ def run_single_manifest(
     schedule_time: str | None = None,
 ) -> PublishItem:
     manifest = load_manifest(manifest_path)
-    item = build_publish_item(
-        manifest_path,
-        manifest,
-        config,
-        schedule_time=validate_schedule_time(schedule_time) if schedule_time else None,
-    )
+    try:
+        item = build_publish_item(
+            manifest_path,
+            manifest,
+            config,
+            schedule_time=validate_schedule_time(schedule_time) if schedule_time else None,
+        )
+    except ValueError as exc:
+        print(f"发布校验未通过：{exc}")
+        raise SystemExit(1) from exc
     issues = validate_item(item)
     if issues:
         print("发布校验未通过：")
